@@ -1,0 +1,852 @@
+---
+title: "DATA*6200 Assignment 1"
+author: "Atharva Vichare"
+output:
+  html_document: default
+  pdf_document: default
+---
+# Introduction
+
+This document outlines steps taken for data cleaning , data manipulation and attempts to analyze the ask_a_manager data set provided .
+
+# Data Cleaning and Manipulation
+
+### Load the ask_a_manager dataset
+
+```{r}
+library(readxl) 
+ask_a_manager <- read_excel("C:/Users/avich/Downloads/ask_a_manager.xlsx") 
+```
+
+### Load the necessary libraries required
+
+```{r, include = FALSE }
+library(dplyr) 
+library(tidyr) 
+library(stringr) 
+library(scales)
+library(ggplot2)
+library(patchwork)
+
+```
+
+### Renaming the columns
+
+```{r}
+clean_ask_a_manager <- ask_a_manager |>
+  rename(
+    Age_group = `How old are you?`,
+    Industry_name = `What industry do you work in?`,
+    Job_title = `Job title`,
+    nothing = `If your job title needs additional context, please clarify here:`,
+    Annual_salary = `What is your annual salary? (You'll indicate the currency in a later question. If you are part-time or hourly, please enter an annualized equivalent -- what you would earn if you worked the job 40 hours a week, 52 weeks a year.)`,
+    Bonuses = `How much additional monetary compensation do you get, if any (for example, bonuses or overtime in an average year)? Please only include monetary compensation here, not the value of benefits.`,
+    Currency = `Please indicate the currency`,
+    Foreign = `If "Other," please indicate the currency here:`,
+    Empty = `If your income needs additional context, please provide it here:`,
+    Country = `What country do you work in?`,
+    US_State = `If you're in the U.S., what state do you work in?`,
+    City = `What city do you work in?`,
+    Overall_Work_Exp = `How many years of professional work experience do you have overall?`,
+    Work_Exp_in_field = `How many years of professional work experience do you have in your field?`,
+    Education = `What is your highest level of education completed?`,
+    Gender = `What is your gender?`,
+    Race = `What is your race? (Choose all that apply.)`
+  )
+head(clean_ask_a_manager)
+```
+
+Using the rename function to rename all the columns in the data set because it is not possible to do any cleaning or analysis with the original column names because they are too long to write in the code.
+
+### Remove the duplicates
+
+Removed the duplicates from the data set by extracting the dates and year from the Timestamp column in separate column named "Dates" and " Year" respectively because they will help analyzing how salaries vary over time and geography. 
+
+```{r}
+#Extract year and date from the Timestamp column 
+clean_ask_a_manager <- clean_ask_a_manager |> 
+  mutate(Year = format(Timestamp, "%Y"), 
+         Date = format(Timestamp, "%Y-%m-%d"))
+
+#Drop the Timestamp column 
+clean_ask_a_manager <- clean_ask_a_manager |>
+  select(-Timestamp)
+
+#Remove Duplicates 
+clean_ask_a_manager <- distinct(clean_ask_a_manager)
+head(clean_ask_a_manager)
+```
+
+### Calculating total salary .
+
+To calculate the total salary I want to add Annual_salary and Bonuses column but the Bonuses column contains NA values which cannot be added so I replaced the NA values in Bonuses column with 0 because i want to add them in Annual_salary column to find the Total_salary and having NA values in bonuses column causes problems .
+
+```{r}
+##Replace NA Values in Bonuses with 0
+clean_ask_a_manager <- clean_ask_a_manager|>
+  mutate(
+    Bonuses = as.numeric(Bonuses),
+    Bonuses = replace_na(Bonuses, 0))
+```
+
+```{r}
+##Calculate total salaries 
+clean_ask_a_manager <- clean_ask_a_manager|>
+  mutate(Total_salary = as.numeric(Annual_salary) + as.numeric(Bonuses))
+head(clean_ask_a_manager)
+```
+
+This creates a new column named Total_salary which can be used further for analysis .
+
+### Dropping unnecessary columns
+
+Dropped some columns from the data set which are not required for analysis and helps to enhance data clarity .
+
+```{r}
+##Drop columns 
+clean_ask_a_manager <- clean_ask_a_manager |>
+  select(- nothing,- Empty)
+```
+
+### Cleaning the country column
+
+I glanced through the data and found out that the country column contains irregularities which need to be standardized because the country column helps me answer salary analysis over geography as well as help to clean the currency column further.
+
+```{r, echo=FALSE}
+usa_variations <- c(
+  'United States', 'United States of America', 'United States- Puerto Rico',
+  'United Statesp', 'United Stattes', 'United Statea', 'United Statees',
+  'United Stares', 'United Stateds', 'United Statew', 'United Status',
+  'United Statez', 'UNITED STATES', 'United statew', 'united states',
+  'united states of america', 'united stated', 'united statesp',
+  'Unted States', 'UNited States', 'Us', 'Untied States', 'United Stated',
+  'Unted States', 'UNited States', 'UNited States', 'Unted States',
+  'United States Of America', 'United States is America',
+  'United States-- Virgin Islands', 'US of A', 'US', 'us', 'Usa',
+  'uSA', 'uS', 'USD', 'UsA', 'USAB', 'USaa', 'USA tomorrow', 'USD',
+  'United STates', 'USaa', 'uSA', 'United Stateds', 'USA-- Virgin Islands',
+  'United states of america', 'Unitef Stated', 'Unitied States',
+  'UnitedStates', 'USS', 'Uniteed States', 
+  'United States (I work from home and my clients are all over the US/Canada/PR',
+  'United Statss', 'The US', 'Uniter Statez',
+  'For the United States government, but posted overseas', 'United Sttes',
+  'United states of America', 'america', 'California', 'San Francisco',
+  'Usat', '🇺🇸', 'Virginia', 'Unites states', 'Unite States',
+  'United States of america', ' United States', 'United Statues',
+  'The United States', 'United State of America', 'Uniyed states',
+  'Uniyes States', 'United States of Americas', 'United Statws', 'US ', 
+  'US>', 'America', 'United States of American ', 'united States', 
+  'Unites States ', 'United Sates', 'United states of America ', 'usa', 
+  'USA', 'usa', 'United states ', 'US', 'Us', 'U S', 'U S ', 
+  'US ', 'United States of America', 'ISA', 'United State', 'US ', 
+  'usa ', 'Unites states ', 'USA (company is based in a US territory, I work remote)', 
+  'USA tomorrow ', 'us ', 'United Sates of America', 'United States of American', 
+  'United States of america ', 'united states ', 'Usa ', 'Hartford', 'UA', 'U.a.', 
+  'U.s', 'U.S', 'U.s.', 'U.S.', 'U.s.a', 'U.s.a.', 'U.s>', 'Uniited States', 'United Y', 
+  'U. S', 'U.a.', 'U.sa', 'U. S.', 'U.s.a', 'U.s.a.','Y','UXZ','U.S.A.'
+)
+
+
+great_britain_variations <- c(
+  'England/UK', 'Great Britain', 'Britain', 'England', 'UK', 'Scotland', 
+  'Northern Ireland', 'Wales', 'United Kingdom', 'UK (England)', 
+  'UK, remote', 'Scotland, UK', 'England, UK', 'UK (Northern Ireland)', 
+  'Wales (UK)', 'Wales, UK', 'england', 'UK (northern England)', 
+  'England, Gb', 'British Isles', 'england', 'britain', 'uk', 
+  'uK', 'u.k.', 'U.K.', 'uk.', 'UK.', 'united kingdom', 
+  'united kindom', 'UNITED KINGDOM', 'United Kingdom (England)', 
+  'united kingdomk', 'United Kingdomk', 'United kingdomk', 
+  'Great Britain (UK)', 'Great Britain, UK', 
+  'United Kingdom, England', 'united kingdon', 
+  'United Kingdom, Scotland', 'United Kingdom, Wales', 
+  'Wales (United Kingdom)', 'UK, but for globally fully remote company', 
+  'Unites kingdom', 'United Kindom', 'Englang', 
+  'Northern Ireland, United Kingdom', 'ENGLAND', 'UK,', 
+  'Unites kingdom', 'Uk', 'England, United Kingdom', 
+  'Northern Ireland, United Kingdom', 'Englang', 
+  'England, United Kingdom', 'England ', 'Ireland ', 
+  'Wales (United Kingdom)', 'ireland', 'Unites kingdom ', 
+  'Ireland', 'United kingdom', 'England, UK', 'United Kingdom.', 'U.k. (Northern England)', 'U.k', 'London'
+)
+
+canada_variations <- c(
+  'Canada', 'canada', 'Canadw', 'CANADA', 'Csnada', 'Canda', 
+  'Canad', 'Can', 'Canad;', 'Canada ', 'Canada, Ottawa, ontario', 
+  'Canada and USA', 'Canad', 'Canadá', 'CANADA ', '$2,175.84/year is deducted for benefits'
+)
+
+remote_variations <- c(
+  'I am located in Canada but I work for a company in the US', 
+  'I work for a UAE-based organization, though I am personally in the US',
+  'n/a (remote from wherever I want)', 
+  'US govt employee overseas, country withheld', 
+  'ARGENTINA BUT MY ORG IS IN THAILAND',
+  "USA, but for foreign gov't", 
+  'Company in Germany I work from Pakistan', 
+  'From Romania, but for an US based company', 
+  'Austria, but I work remotely for a Dutch/British company',
+  "I work for an US based company but I'm from Argentina", 
+  'UK for US company', 
+  'Remote (philippines)', 
+  'Japan, US Gov position', 
+  'UK, but for globally fully remote company', 
+  'Company in Germany. I work from Pakistan.', 
+  "I work for an US based company but I'm from Argentina.", 
+  'Austria, but I work remotely for a Dutch/British company'
+)
+
+
+international_variations <- c(
+  'Global', 'Worldwide (based in US but short term trips aroudn the world)', 
+  'From New Zealand but on projects across APAC', 'europe'
+)
+
+netherlands_variations <- c(
+  'The Netherlands', 'Netherlands', 'netherlands', 
+  'the Netherlands', 'Nederland', 'The netherlands', 'NL'
+)
+
+other_variations <- list(
+  'China' = c('China', 'china', 'Mainland China'),
+  'New Zealand' = c('New Zealand', 'New zealand', 'New Zealand Aotearoa', 
+                    'new zealand', 'Aotearoa New Zealand'),
+  'Finland' = c('Finland', 'finland'),
+  'Czech Republic' = c('Czech Republic', 'Czechia', 'Czech Republc', 
+                       'Czech repulic', 'Czech republic'),
+  'Nigeria' = c('Nigeria', 'NIGERIA'),
+  'Spain' = c('spain'),
+  'Japan' = c('JAPAN', 'japan', 'JAPAN'),
+  'Italy' = c('Italy (South)')
+)
+
+denmark_variations <- c("Denmark", "Danmark", "denmark" )
+hong_kong_variations <- c("Hong Kong", "hong konh")
+india_variations <- c("India", "ibdia")
+italy_variations <- c("Italy", "Italy (South)")
+luxembourg_variations <- c("Luxembourg", "Luxemburg")
+mexico_variations <- c("Mexico", "México")
+australia_variations <- c(
+  'Australi', 'Australia', 'Australian', 'australia'
+)
+
+brazil_variations <- c(
+  'Brasil'
+)
+
+france_varations <-c(
+  'france', 'FRANCE'
+)
+
+
+clean_ask_a_manager <- clean_ask_a_manager |>
+  mutate(
+    Country = case_when(
+      Country %in% usa_variations ~ 'USA',
+      Country %in% great_britain_variations ~ 'UK',
+      Country %in% remote_variations ~ 'Remote',
+      Country %in% canada_variations ~ 'Canada',
+      Country %in% netherlands_variations ~ 'Holland',
+      Country %in% other_variations$China ~ 'China',
+      Country %in% other_variations$`New Zealand` ~ 'New Zealand',
+      Country %in% other_variations$Finland ~ 'Finland',
+      Country %in% other_variations$`Czech Republic` ~ 'Czech Republic',
+      Country %in% other_variations$Nigeria ~ 'Nigeria',
+      Country %in% other_variations$Spain ~ 'Spain',
+      Country %in% other_variations$Japan ~ 'Japan',
+      Country %in% international_variations ~ 'International',
+      Country %in% australia_variations ~ 'Australia',  # Correct variable name
+      Country %in% brazil_variations ~ 'Brazil', 
+      Country %in% denmark_variations ~ 'Denmark',
+      Country %in% hong_kong_variations ~ 'Hong Kong',
+      Country %in% india_variations ~ 'India',
+      Country %in% italy_variations ~ 'Italy',
+      Country %in% luxembourg_variations ~ 'Luxembourg',
+      Country %in% mexico_variations ~ 'Mexico',
+      TRUE ~ Country
+    )
+  )
+```
+
+> Limiting factor here is that in country column people have written things like global , intenration or working in asia pacific and some remote locations which makes it difficult to categorize all the entries in country names so have to use terms like Remote and International to make them stand out. 
+
+Summary of how code works :-
+
+– Define variations using two lists [usa_variations & great_britain_variations]
+
+– Use mutate() to modify the country column and case_when() to to set conditions and replace the string
+
+>Please refer to the code file for code.
+
+### Currency column standardization
+
+As mentioned previously the currency column contains currencies in various formats, abbreviations and codes which makes it difficult to analyze so I cleaned the currency column in the following steps .
+
+Step 1 : Replacing "Other"values in the currency column
+
+```{r}
+##Cleaning Currency column 
+clean_ask_a_manager <- clean_ask_a_manager|> 
+  mutate(
+    Currency = ifelse(Currency =="Other",Foreign,Currency))
+```
+
+There are various entries with "Other" inside the currency column with its respected values in the Foreign column that can be retrived .
+
+Step 2 : Filling missing values in Currency column by Country name
+
+```{r}
+#Fill NA values in Currency with Country name
+clean_ask_a_manager <- clean_ask_a_manager |>
+  mutate (
+    Currency = ifelse(is.na(Currency),Country,Currency))
+```
+
+The currency column contains various missing values which can replaced by their Country name rather than deleting the entries.
+
+Step 3 : Standardizing currency names with str_replace_all()
+
+```{r, echo = FALSE}
+#Clean the Currency column 
+clean_ask_a_manager <- clean_ask_a_manager |>
+     mutate(
+         Currency = str_replace_all(Currency, regex("(?i)Argentine Peso|Argentinian Peso\\s*\\(ARS\\)|Peso Argentino"), "ARS"),
+         Currency = str_replace_all(Currency, regex("(?i)American Dollars|US Dollar|USA|Equity|United States"), "USD"),
+         Currency = str_replace_all(Currency, regex("(?i)Australian Dollars|AUD Australian"), "AUD"),
+         Currency = str_replace_all(Currency, regex("(?i)BR\\$|BRL\\s*\\(R\\$\\)"), "BRL"),
+         Currency = str_replace_all(Currency, regex("(?i)canadian"), "CAD"),
+         Currency = str_replace_all(Currency, regex("(?i)China\\s*RMB\\s*|RMB\\s*\\(chinese yuan\\)"), "CNY"),  # Updated line for China RMB
+         Currency = str_replace_all(Currency, regex("(?i)croatian kuna"), "HRK"),
+         Currency = str_replace_all(Currency, regex("(?i)czK|czech crowns"), "CZK"),
+         Currency = str_replace_all(Currency, regex("(?i)dkk|Danish Kroner"), "DKK"),
+         Currency = str_replace_all(Currency, regex("(?i)Euro"), "EUR"),
+         Currency = str_replace_all(Currency, regex("(?i)ILS\\s*\\(Shekel\\)|ILS/NIS|ils|Israeli Shekels|NIS\\s*\\(new Israeli shekel\\)"), "ILS"),
+         Currency = str_replace_all(Currency, regex("(?i)INR\\s*\\(Indian Rupee\\)|inr|Indian rupee|Indian rupeeS|Rupees|India|INRs"), "INR"),
+         Currency = str_replace_all(Currency, regex("(?i)Korean Won|KRW\\s*\\(KRW\\)|KRW"), "KRW"),
+         Currency = str_replace_all(Currency, regex("(?i)Mexican pesos"), "MXN"),
+         Currency = str_replace_all(Currency, regex("(?i)Norwegian kroner\\s*\\(NOK\\)|Nok"), "NOK"),
+         Currency = str_replace_all(Currency, regex("(?i)Taiwanese dollars"), "NTD"),
+         Currency = str_replace_all(Currency, regex("(?i)Philippine Peso|Philippine peso\\s*\\(PHP\\)|Philippine Pesos|Php|PhP\\s*\\(Philippine Peso\\)|PHPs"), "PHP"),
+         Currency = str_replace_all(Currency, regex("(?i)PLN\\s*\\(PLN\\)|PLN\\s*\\(Polish zloty\\)|Polish\\s*Zloty|Polish\\s*Złoty|PLN\\s*\\(Zwoty\\)"), "PLN"),
+         Currency = str_replace_all(Currency, regex("(?i)Sgd|Singapore Dollara"), "SGD"),
+         Currency = str_replace_all(Currency, regex("(?i)Malaysia"), "MYR"),
+         Currency = str_replace_all(Currency, regex("(?i)\\s*THAI\\s*BAHT\\s*|Thai\\s*Baht"), "THB"),
+         Currency = str_replace_all(Currency, regex("KRW\\s*\\(KRW\\)", ignore_case = TRUE), "KRW"),
+         Currency = str_replace_all(Currency, regex("INRs", ignore_case = TRUE), "INR"),
+         Currency = str_replace_all(Currency, regex("PHP \\(PHP\\)|PHPs", ignore_case = TRUE), "PHP")
+       )
+
+#Dropping Foreign column
+clean_ask_a_manager <- clean_ask_a_manager |>
+  select(-Foreign)
+```
+
+
+The str_replae_all() is used to search for variations and replace them with the actual currency names and the regex() is used to match patterns.Dropped the 'Foreign' since now it wont be of any use. 
+
+>Plase refer to code file for the code . 
+
+
+### Coverting currencies into one single type
+
+After cleaning the currencies, I choose to convert all the currencies into USD(\$) because its not possible to do analysis with different currencies. .
+
+Here I create a conversion_rates dataframe to store the conversion values of all the currencies .
+
+```{r}
+#Create a conversion rates data frame to store rates
+conversion_rates <- data.frame(
+  Currency = c("USD", "GBP", "CAD", "EUR", "AUD/NZD", "INR", "ARS", "CHF", 
+               "MYR", "ZAR", "SEK", "HKD", "NOK", "BRL", "DKK", "TTD", 
+               "MXN", "CZK", "Bdt", "PHP", "PLN", "TRY", "CNY", 
+               "ILS", "AUD", "JPY", "NTD", "SGD", "KRW", "THB", "IDR", 
+               "NZD", "LKR", "SAR", "RM", "HRK", "NGN", "COP"), 
+  rate_to_usd = c(1.0, 1.36,0.74,1.47,0.64,0.012,0.0028,1.09,
+                  0.24,0.052,0.092,0.13,0.086,0.19,0.15,0.15,
+                  0.012,0.045,0.0095,0.018,0.23,0.036,0.14,
+                  0.27,0.64,0.0067,0.032,0.74,0.0076,0.030,0.000065,
+                  0.64,0.64,0.027,0.018,0.00076,0.27,0.22)
+)
+
+# Left join clean_ask_a_manager with conversion rates
+clean_ask_a_manager <- clean_ask_a_manager |>
+  left_join(conversion_rates, by = "Currency") |>
+  mutate(
+    salary_in_usd = ifelse(!is.na(rate_to_usd), Total_salary * rate_to_usd, NA)
+  )
+
+#Remove rows with salaries 0 
+clean_ask_a_manager <- clean_ask_a_manager |>
+  filter(salary_in_usd != 0)
+
+head(ask_a_manager)
+```
+
+Here, I join the conversion_rate dataframe to my main dataframe of clean_ask_a_manager using left join and calculate the currencies in USD by simply multiplying total_salary and rates_to_usd and store the result in a new column named salary_in_usd .Further removed the rows which contained '0' in salary_in_usd column since they are practically missing plus there arent many rows so it wont affect our analysis much 
+
+### Cleaning industry_name column
+
+The industry name column has various anomalies which need to be fixed before doing analysis.
+
+Split the strings in the industry column seperated by space, /,or and & symbol and then took the first word from every entry as the main industry .
+
+```{r , include= FALSE}
+##Cleaning Industries 
+clean_ask_a_manager <- clean_ask_a_manager |>
+  mutate(`Industry_name` = str_replace_all(`Industry_name`, "\\s*(,|and|or|&|/|\\[ -- \\])\\s*", " ")) %>%
+  mutate(`Industry_name` = word(`Industry_name`, 1)) #Select first word only as main industry 
+head(clean_ask_a_manager)
+```
+
+After this used str_replace_all() which replaces repeating keywords with their original format for example industry names containing 'IT', Software , Computing and Tech are replaced by "IT". The regex() is used to define regular expression for matching keywords and str_squish() removes any extra spaces ensuring the column is clean.
+
+At last I remove the rows containing NA in the Industry_name column because they are of no use and we cannot replace them using any method since they are difficult to predict.
+
+>Please refer to code file for the code .  
+
+```{r, echo = FALSE}
+#Clean Industry_name column
+clean_ask_a_manager <- clean_ask_a_manager |>
+  mutate(
+    Industry_name = str_replace_all(Industry_name, regex("\\bIT\\b|\\bSoftware\\b|\\bTech\\b|\\bTechnology\\b|\\bTechnical\\b|\\bInformation\\b|\\bComputing\\b"), "IT"),
+    Industry_name = str_replace_all(Industry_name, regex("\\bBanking\\b|\\bAccounting\\b"), "Banking"),
+    Industry_name = str_replace_all(Industry_name, regex("\\beducation\\b|\\buniversity\\b|\\bE\\b|\\bEarly\\b|\\bEd\\b|\\bAcademic\\b|\\bAcademia\\b|\\bAcademia--cell\\b|\\bacademic\\b"), "education"),
+    Industry_name = str_replace_all(Industry_name, regex("\\bautomotive\\b|\\bauto\\b"), "automotive"),
+    Industry_name = str_replace_all(Industry_name, regex("\\bReal Estate\\b|\\bReal\\b|\\bTitle\\b"), "Real Estate"),
+    Industry_name = str_replace_all(Industry_name, regex("\\bConstruction\\b|\\bProperty\\b|\\bOutdoor\\b"), "Construction"),
+    Industry_name = str_replace_all(Industry_name, regex("\\bPublic Research\\b|\\bPublic\\b"), "Public research"),
+    Industry_name = str_replace_all(Industry_name, regex("\\bTransportation\\b|\\bTransp\\b|\\bTourism\\b|\\bTransport\\b|\\bTravel\\b"), "Transportation"),
+    Industry_name = str_replace_all(Industry_name, regex("\\bBuiness\\b|\\bB2b\\b|\\bMy\\b|\\bRepair\\b|\\bsmall\\b|\\bFamily\\b"), "Business"),
+    Industry_name = str_replace_all(Industry_name, regex("\\bVeterinary\\b|\\bVet\\b"), "Veterinary"),
+    Industry_name = str_replace_all(Industry_name, regex("\\bPharmacy\\b|\\bPharmaceutical\\b|\\bPharmaceuticals\\b|\\bPharma\\b|\\bBiotech\\b|\\bRegulatory\\b|\\bDrug\\b|\\bPharmacuticals\\b|\\bBiopharmaceuticals\\b|\\bBitech\\b"), "Pharmacy"),
+    Industry_name = str_replace_all(Industry_name, regex("\\bTourism\\b|\\bLeisure\\b"), "Tourism"),
+    Industry_name = str_replace_all(Industry_name, regex("\\bLibrary\\b|\\bLibrarian\\b|\\blibrarian\\b|\\bLibraries\\b|\\blibraries\\b|\\blibrary\\b|\\bSpecial\\b"), "Library"),
+    Industry_name = str_replace_all(Industry_name, regex("\\bLife Sciences\\b|\\bLife\\b"), "Life Sciences"),
+    Industry_name = str_replace_all(Industry_name, regex("\\bElectrcian\\b|\\bLow\\b"), "Electrician"),
+    Industry_name = str_replace_all(Industry_name, regex("\\bQA\\b|\\bQualtiy\\b"), "Quality Assurance"),
+    Industry_name = str_replace_all(Industry_name, regex("\\bR&D\\b|\\bR\\b|\\bResearch\\b|\\bScience\\b|\\bScientific\\b|\\bScientist\\b|\\bSpecialist\\b|\\bSurvey\\b|\\bSurveying\\b"), "R&D"),
+    Industry_name = str_replace_all(Industry_name, regex("\\bReligion\\b|\\bReligious\\b|\\breligious\\b"), "Religion"),
+    Industry_name = str_replace_all(Industry_name, regex("\\bRenewable Energy\\b|\\bRenewable\\b"), "Renewable Energy"),
+    Industry_name = str_replace_all(Industry_name, regex("\\bMarketing\\b|\\bMarket\\b"), "Marketing"),
+    Industry_name = str_replace_all(Industry_name, regex("\\bNonprofits\\b|\\bNon\\b|\\bNonprofit\\b|\\bThird\\b"), "Nonprofits"),
+    Industry_name = str_replace_all(Industry_name, regex("\\bCommunity\\b|\\bSign\\b"), "Community"),
+    Industry_name = str_replace_all(Industry_name, regex("\\bSocial Work\\b|\\bSocial\\b|\\bFundraising\\b|\\bDirect\\b|\\bCaregiver\\b"), "Social Work"),
+    Industry_name = str_replace_all(Industry_name, regex("\\bGaming\\b|\\bTabletop\\b|\\bVideo\\b|\\bVirtual\\b|\\bvideo\\b"), "Gaming"),
+    Industry_name = str_replace_all(Industry_name, regex("\\bUnion\\b|\\bUnions\\b|\\bWherever\\b"), "Union"),
+    Industry_name = str_replace_all(Industry_name, regex("\\bUX\\b|\\bUser\\b"), "UX"),
+    Industry_name = str_replace_all(Industry_name, regex("\\bWarehouse\\b|\\bWarehousing\\b"), "Warehouse"),
+    Industry_name = str_replace_all(Industry_name, regex("\\bWaste Management\\b|\\bWaste\\b"), "Waste Management"),
+    Industry_name = str_replace_all(Industry_name, regex("\\bWine\\b|\\bWinery\\b"), "Wine"),
+    Industry_name = str_replace_all(Industry_name, regex("\\bZoo\\b|\\bZoos\\b"), "Zoo"),
+    Industry_name = str_replace_all(Industry_name, regex("\\bInternational\\b|\\bGovernment\\b"), "Government"),
+    Industry_name = str_replace_all(Industry_name, regex("\\bPet Care\\b|\\bPet\\b|\\bPer\\b"), "Pet Care"),
+    Industry_name = str_replace_all(Industry_name, regex("\\bIndustries\\b|\\bClean\\b|\\bIndustrial\\b"), "Industries"),
+    Industry_name = str_replace_all(Industry_name, regex("\\bHospitality\\b|\\bFast\\b|\\bRestaurant\\b"), "Hospitality"),
+    Industry_name = str_squish(Industry_name)  
+  ) |>
+  filter(!is.na(Industry_name))
+```
+
+>Limiting factor here is there are countless industries which belong to one group but have different meaning (ambiguity) and also there are entries where people have written all sorts of unusable things which is really difficult to pick and remove. Therefore it is hard to catrgorize all of them.  
+
+
+### Cleaning US_State column
+
+```{r}
+#Clean US State 
+clean_ask_a_manager <- clean_ask_a_manager |>
+  mutate(New_US_State = case_when(
+    str_detect(US_State, "^California") ~ "California",
+    str_detect(US_State, "^New York") ~ "New York",
+    str_detect(US_State, "^Texas") ~ "Texas",
+    str_detect(US_State, "^Florida") ~ "Florida",
+    str_detect(US_State, "^Virginia") ~ "Virginia",
+    str_detect(US_State, "^Ohio") ~ "Ohio",
+    str_detect(US_State, "^Illinois") ~ "Illinois",
+    str_detect(US_State, "^Georgia") ~ "Georgia",
+    str_detect(US_State, "^Massachusetts") ~ "Massachusetts",
+    str_detect(US_State, "^Arizona") ~ "Arizona",
+    str_detect(US_State, "^Alabama") ~ "Alabama",
+    str_detect(US_State, "^District of Columbia") ~ "District of Columbia",
+    str_detect(US_State, "^Wyoming") ~ "Wyoming",
+    str_detect(US_State, "^North Carolina") ~ "North Carolina",
+    str_detect(US_State, "^Washington") ~ "Washington",
+    str_detect(US_State, "^Michigan") ~ "Michigan",
+    str_detect(US_State, "^Oregon") ~ "Oregon",
+    str_detect(US_State, "^Nevada") ~ "Nevada",
+    str_detect(US_State, "^Mississippi") ~ "Mississippi",
+    str_detect(US_State, "^Colorado") ~ "Colorado",
+    str_detect(US_State, "^Maryland") ~ "Maryland",
+    str_detect(US_State, "^South Carolina") ~ "South Carolina",
+    str_detect(US_State, "^Tennessee") ~ "Tennessee",
+    str_detect(US_State, "^Pennsylvania") ~ "Pennsylvania",
+    str_detect(US_State, "^Iowa") ~ "Iowa",
+    str_detect(US_State, "^Arkansas") ~ "Arkansas",
+    str_detect(US_State, "^Hawaii") ~ "Hawaii",
+    str_detect(US_State, "^New Jersey") ~ "New Jersey",
+    str_detect(US_State, "^Kentucky") ~ "Kentucky",
+    str_detect(US_State, "^Indiana") ~ "Indiana",
+    TRUE ~ US_State 
+  ))
+```
+
+Cleaned the US_state using str_detect() to answer the question about variabiltiy in salaries over geography
+
+In this way i cleaned the whole data set and now it is ready for analysis and visualizationzation. 
+
+
+
+# Data Visualization 
+
+### Question 1
+
+Which industry or industries have the highest/lowest salaries?
+
+Industries with Highest salaries and Lowest Salaries
+
+```{r, echo=FALSE}
+# Calculate industry counts and filter
+ industry_counts <- as.data.frame(table(clean_ask_a_manager$Industry_name))
+ colnames(industry_counts) <- c("Industry_name", "count")
+ filtered_industries <- industry_counts[industry_counts$count >= 100, "Industry_name"]
+#Filter the data and perform IQR for oultier removal
+ clean_ask_a_manager <- clean_ask_a_manager |>
+   filter(Industry_name %in% filtered_industries) |>
+   group_by(Industry_name) |>
+   mutate(Q1 = quantile(salary_in_usd, 0.25, na.rm = TRUE),
+          Q3 = quantile(salary_in_usd, 0.75, na.rm = TRUE),
+          IQR = IQR(salary_in_usd, na.rm = TRUE),
+          lower_bound = Q1 - 1.5 * IQR,
+          upper_bound = Q3 + 1.5 * IQR) |>
+   filter(salary_in_usd >= lower_bound & salary_in_usd <= upper_bound)
+#Calculate avg. salaries
+ average_salary_summary <- clean_ask_a_manager |>
+   group_by(Industry_name) |>
+   summarise(average_salary = mean(salary_in_usd, na.rm = TRUE))
+#Get top 10 industries 
+ top_10 <- head(average_salary_summary[order(-average_salary_summary$average_salary), ], 10)
+#Plot the bar graph 
+ p1 <- ggplot(top_10, aes(x = reorder(Industry_name, average_salary), 
+                          y = average_salary)) + 
+   geom_bar(stat = "identity", 
+            linewidth = 1,
+            fill = "skyblue") + 
+   coord_flip() + 
+   labs(title = "Industries with Highest Avg. Salaries", 
+        x = "Industry Name", 
+        y = "Average Salary (USD)") +
+   scale_y_continuous(labels = function(x) paste0("$", scales::comma(x / 1000), "k")) + 
+   theme_minimal() +
+   theme(legend.position = "none",
+         plot.title = element_text(hjust = 0.5, size = 10)) + 
+   geom_text(aes(label = paste0("$", round(average_salary / 1000), "k")),#Format the labels 
+             hjust = 1.1, #Push the labels outside
+             size = 3)# Label size
+ 
+ 
+ #Get lowest 10 industries 
+ top_10_low <- head(average_salary_summary[order(average_salary_summary$average_salary), ], 10)
+#Plot the bar graph
+ p2 <- ggplot(top_10_low, aes(x = reorder(Industry_name, -average_salary), 
+                              y = average_salary)) + 
+   geom_bar(stat = "identity", 
+            linewidth = 1,
+            fill = "skyblue") + 
+   coord_flip() + 
+   labs(title = "Industries with Lowest Avg. Salaries", 
+        x = "Industry Name", 
+        y = "Average Salary (USD)") +
+   scale_y_continuous(labels = function(x) paste0("$", scales::comma(x / 1000), "k")) + 
+   theme_minimal() +
+   theme(legend.position = "none",
+         plot.title = element_text(hjust = 0.5, size = 10)) + 
+   geom_text(aes(label = paste0("$", round(average_salary / 1000), "k")),#Format labels
+             hjust = 1.1,  #Push the labels out
+             size = 3) #Label size
+#Store it in combined plot
+ combined_plot <- p1 + p2
+ print(combined_plot) #Print the combined plot
+ 
+```
+
+This is horizontal bar chart that ranks industries based on their average salary. 
+Pharmacy, IT, and Law have the highest average salaries, ranging from $103k to $126k per year.
+Business, Engineering, and Utilities also have relatively high average salaries.
+Library, Social Work, and Retail have the lowest average salaries, ranging from $54k to $56k per year. Hospitality, Education, and Nonprofits also have lower average salaries.
+The overall salary range is quite significant, with a difference of $72k between the highest and lowest average salaries.
+
+
+### Question 2 :
+
+Which industries have the highest salary variability?
+
+To answer this question I made use of box plot to show variability in the salaries.
+
+```{r, echo=FALSE}
+
+## Plot for variability 
+industry_counts <- as.data.frame(table(clean_ask_a_manager$Industry_name))
+
+# Rename the columns 
+colnames(industry_counts) <- c("Industry_name", "count")
+
+# Step 2: Filter out industries with fewer than 100 entries
+filtered_industries <- industry_counts[industry_counts$count >= 100, "Industry_name"]
+
+# Rename the columns 
+colnames(industry_counts) <- c("Industry_name", "count")
+
+#Filter out industries with fewer than 100 entries
+filtered_industries <- industry_counts[industry_counts$count >= 100, "Industry_name"]
+#Calculate mean, standard deviation and filter for top industries with high variability
+top_variability_industries <- clean_ask_a_manager |>
+  filter(Industry_name %in% filtered_industries) |>
+  group_by(Industry_name) |>
+  summarise(sd_salary = sd(salary_in_usd, na.rm = TRUE)) |>
+  arrange(desc(sd_salary)) |>
+  top_n(10, sd_salary) |> 
+  pull(Industry_name) 
+#Plot the box_plot 
+plot_variability_boxplot <- clean_ask_a_manager |>
+  filter(Industry_name %in% top_variability_industries) |>
+  ggplot(aes(x = reorder(Industry_name, salary_in_usd), y = salary_in_usd, fill = Industry_name)) + 
+  geom_boxplot(outlier.color = "red", outlier.shape = 16, outlier.size = 2) + 
+  scale_fill_manual(values = colorRampPalette(c("deepskyblue", "dodgerblue4"))(10)) + 
+  labs(title = "Top Industries by Salary Variability", 
+       subtitle = "Distribution of Salaries in Industries with Highest Standard Deviation",
+       x = "Industries", 
+       y = "Salary (USD)") +
+  scale_y_continuous(labels = scales::dollar) + 
+  theme_minimal(base_size = 14) +
+  theme(
+    legend.position = "none", 
+    axis.text.x = element_text(size = 8, , color = "black"),
+    axis.text.y = element_text(size = 8, color = "black"),
+    plot.title = element_text(size = 12, face = "bold", color = "black", hjust = 0.5), 
+    plot.subtitle = element_text(size = 10, hjust = 0.5, color = "black"),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank() 
+  )
+
+print(plot_variability_boxplot) #Print the plot
+```
+
+The box plots for all industries show a significant spread, indicating high salary variability within each industry.
+Several industries have outliers, particularly Marketing and IT, which suggests that there are a small number of individuals in these industries who earn significantly more than the rest of their peers.The median salaries (the horizontal lines within the boxes) for most industries are relatively close together, suggesting that the middle 50% of earners in these industries have similar salaries.
+While the overall variability is high across all industries, there are some differences in the specific distributions. For example, the box plot for Pharmacy is narrower than the box plots for some other industries, indicating a smaller range of salaries within that industry.
+Industries like Law and Entertainment have relatively high mean salaries but also demonstrate notable variability.
+
+### Question 3:
+
+How do salaries vary over time ?
+
+```{r, echo=FALSE}
+#Convert Year column in numeric
+clean_ask_a_manager$Year <- as.numeric(as.character(clean_ask_a_manager$Year))
+
+# Calculate IQR and bounds for salary
+Q1 <- quantile(clean_ask_a_manager$salary_in_usd, 0.25, na.rm = TRUE)
+Q3 <- quantile(clean_ask_a_manager$salary_in_usd, 0.75, na.rm = TRUE)
+IQR <- Q3 - Q1
+#Set upper & lower bound
+lower_bound <- Q1 - 1.5 * IQR
+upper_bound <- Q3 + 1.5 * IQR
+
+# Calculate mean salary per year
+mean_salary_per_year <- clean_ask_a_manager |>
+  filter(salary_in_usd >= lower_bound & salary_in_usd <= upper_bound) |>
+  group_by(Year) |>
+  summarise(mean_salary = mean(salary_in_usd, na.rm = TRUE), .groups = 'drop')
+
+# Plotting with a normal line chart
+ggplot(mean_salary_per_year, aes(x = Year, y = mean_salary)) +
+  geom_line(color = "black", linewidth = 1.2) + 
+  geom_point(color = "orange", size = 3, shape = 21, fill = "orange") +  
+  geom_text(aes(label = paste0("$", round(mean_salary))), 
+            vjust = -1, size = 4, color = "blue") +
+  labs(
+    title = "Mean Salary Change Over the Years",
+    subtitle = "Analysis of salary trends",
+    x = "Year",
+    y = "Mean Salary in USD"
+  ) + 
+  scale_y_continuous(
+    limits = c(50000, max(mean_salary_per_year$mean_salary, na.rm = TRUE) * 1.1),#Start y axis from   
+    labels = dollar_format(scale = 1e-3, suffix = "K") #Add dollar to Y axis labels 
+  ) +  
+  theme_minimal(base_size = 15) + 
+  theme(
+    plot.title = element_text(face = "bold", size = 10),  
+    plot.subtitle = element_text(size = 8, color = "gray40"),
+    axis.title.x = element_text(face = "bold"), 
+    axis.title.y = element_text(face = "bold"),  
+    axis.text = element_text(size = 10),  
+    panel.grid.major = element_line(color = "lightgray"),  
+    panel.grid.minor = element_blank(),  
+    plot.caption = element_text(size = 10, face = "italic", hjust = 1)  
+  )
+```
+As years pass by and we come to the year 2024 we can observe that there are only 74 entries and the number of industries is much more so its not possible to say for a fact on how salaries have increased or decreased from 2023 to 2024. But still we can take a general idea of how salaries have varied. 
+
+The graph suggests that mean salary kept decreasing from 2021 to 2024 Between 2021 and 2022, the mean salary decreased from $86,631 to $83,900.
+Between 2022 and 2023, the mean salary decreased further from $83,900 to $70,264.
+Between 2023 and 2024, the mean salary decreased even further from $70,264 to $60,776.
+Overall, the data suggests a steady decline in mean salary over the years. This could be attributed to various factors such as economic conditions, inflation,changes in the job market
+due to Covid-19. 
+
+>Limit to this graph is that there should have been more data about 2024 if for certain we want to say the salaries have decreased. But since there is limited data we can only assume by looking at the graph that initially it has decreased. 
+
+
+How do salaries vary over geography?
+
+```{r, echo = FALSE}
+# Calculate avg. annual salary and filter for states with at least 50 occurrences
+Annual_salary_by_state <- clean_ask_a_manager |>
+  group_by(New_US_State) |>
+  summarise(salary_in_usd = mean(salary_in_usd, na.rm = TRUE), .groups = 'drop') |>
+  filter(New_US_State %in% names(which(table(clean_ask_a_manager$New_US_State) >= 50))) |>
+  arrange(desc(salary_in_usd))
+#Create new label 
+custom_label <- function(x) {
+  paste0("$", round(x / 1000), "k")  
+}
+# Plot the top 10 states with the highest average annual salary
+ggplot(data = Annual_salary_by_state %>% top_n(10, salary_in_usd), 
+       aes(x = reorder(New_US_State, salary_in_usd), y = salary_in_usd)) +
+  geom_bar(stat = 'identity', aes(fill = salary_in_usd)) +
+  coord_flip() +  
+  scale_y_continuous(labels = dollar_format()) +  #Add dollar sign
+  labs(title = 'Average Annual Salary in US States',
+       x = 'US_States',
+       y = 'Average Annual Salary(USD)') +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 0, hjust = 1)) +
+  scale_fill_gradient(low = "cyan", high = "cyan4") +
+  guides(fill = "none") +  # Remove the legend
+  geom_text(aes(label = custom_label(salary_in_usd), 
+                y = salary_in_usd),  #Position of label
+            hjust = 1.2,  #Move text to right of the bar
+            color = "black")  
+```
+
+This horizontal bar chart that displays the average annual salary in various US states.
+From the chart we can say that California has the highest average annual salary among the listed states, followed by Washington.
+New York, District of Columbia, Alabama, and New Jersey have similar average annual salaries, ranging from $110K to $118K. 
+Connecticut, Virginia, and Colorado have lower average annual salaries compared to the other states.
+
+
+
+### Plot 1 : Percentage increase in salary by Overall Work Experiences 
+
+```{r, echo=FALSE}
+#Prepare data for average salary
+avg_salary_by_years_pro <- clean_ask_a_manager |>
+  group_by(Overall_Work_Exp) |>
+  summarise(salary_in_usd = mean(salary_in_usd, na.rm = TRUE)) |>
+  mutate(
+    index = case_when(
+      Overall_Work_Exp == "1 year or less" ~ 1,
+      Overall_Work_Exp == "2 - 4 years" ~ 2,
+      Overall_Work_Exp == "5-7 years" ~ 3,
+      Overall_Work_Exp == "8 - 10 years" ~ 4,
+      Overall_Work_Exp == "11 - 20 years" ~ 5,
+      Overall_Work_Exp == "21 - 30 years" ~ 6,
+      Overall_Work_Exp == "31 - 40 years" ~ 7,
+      Overall_Work_Exp == "41 years or more" ~ 8
+    )
+  ) |>
+  arrange(index) |>
+  mutate(
+    pct_increase_prev_annual_salary = paste0(round((salary_in_usd / lag(salary_in_usd) - 1) * 100, 1), "%")
+  ) |>
+  replace_na(list(pct_increase_prev_annual_salary = "0%")) #Replace NA values if any
+
+# Plot with ggplot2
+ggplot(avg_salary_by_years_pro, aes(x = reorder(Overall_Work_Exp, index), y = salary_in_usd, group = 1)) +
+  geom_line(color = "blue", linewidth = 1.2) + #Line plot             
+  geom_point(color = "red", size = 3) + #Points                     
+  geom_text(aes(label = pct_increase_prev_annual_salary), #Percentage increase labels
+            vjust = 3, 
+            size = 3, 
+            color = "black") +
+  labs(
+    title = "Percentage Increase in Salary by Years of Professional Experience",
+    subtitle = "Average Annual Salary with Percentage Increase",
+    x = "Years of Professional Experience",
+    y = "Average Annual Salary (USD)"
+  ) +
+  theme_minimal(base_size = 14) +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1), #X axis format
+    plot.title = element_text(size = 10, face = "bold", hjust = 0.5, color = "black"), #Title format
+    plot.subtitle = element_text(size = 10, hjust = 0.5, color = "black"),#Subtitle format
+    panel.grid.minor = element_blank(),
+    panel.grid.major.x = element_blank()
+  ) +
+  scale_y_continuous(labels = dollar_format()) +  # Format y-axis as dollar
+  scale_x_discrete(expand = c(0.05, 0.05))  #padding for x asix 
+
+```
+
+This is a line chart which shows trend in average annual salary (USD) across different work experience . The percentage values above each point shows relative percentage change in salary compared to previous experiences . Key observations :
+
+– Moving from "1 year or less" to "2 - 4 years" shows a 6.7% increase in salary
+
+–The largest increase is from "5 - 7 years" to "8 - 10 years," at 12.5%.
+
+– After "21 - 30 years," the salary increase rate starts decreasing, with the final category ("41 years or more") showing a slight decrease compared to "31 - 40 years."
+
+Thus we can say that there is positive increase in salary till 21-30 years of experience and after that the trend shows decreasing trend
+
+### Plot 2 : Mean Salary differnece by Overall Experience
+
+```{r , echo=FALSE}
+#Calculate Outliers 
+Q1 <- quantile(clean_ask_a_manager$salary_in_usd, 0.25, na.rm = TRUE)
+Q3 <- quantile(clean_ask_a_manager$salary_in_usd, 0.75, na.rm = TRUE)
+IQR <- Q3 - Q1
+#Define lower and upper bounds
+lower_bound <- Q1 - 1.5 * IQR
+upper_bound <- Q3 + 1.5 * IQR
+
+#Filtering outliers 
+clean_ask_a_manager_filtered <- clean_ask_a_manager |>
+  filter(salary_in_usd >= lower_bound & salary_in_usd <= upper_bound)
+
+#Calculate mean annual salary for each experience group 
+mean_salary_df <- clean_ask_a_manager_filtered |>
+  group_by(Overall_Work_Exp) |>
+  summarise(mean_salary = mean(salary_in_usd, na.rm = TRUE))
+# Calculate the overall mean salary
+overall_mean_salary <- mean(clean_ask_a_manager_filtered$salary_in_usd, na.rm = TRUE)
+#Plot the graph
+my_plot <- ggplot(mean_salary_df, aes(x = Overall_Work_Exp, y = mean_salary, fill = mean_salary)) +
+  geom_bar(stat = "identity") +
+  geom_text(aes(label = paste0(scales::comma(round(mean_salary)), "$")), vjust = -0.5) +
+  labs(
+    title = "Mean Salary Differences by Overall Experience",
+    x = "Years of Experience in Field",
+    y = "Mean Annual Base Salary (USD)"
+  ) + 
+  scale_y_continuous(labels = scales::dollar_format(scale = 0.001, suffix = "K", accuracy = 1)) +
+  scale_fill_gradient(low = "lightgreen", high = "darkgreen") +
+  guides(fill = "none") +
+  theme_minimal()+
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1))
+print(my_plot)
+
+```
+
+The graph shows the mean annual base salary differences by overall experience level.
+As the years of experience increase, the mean annual base salary generally increases as well.
+
+There is a significant jump in salary between the "1 year or less" and "2-4 years" experience levels. 
+
+This suggests a significant increase in earning potential after gaining some initial experience.The salary continues to increase steadily with each additional year of experience, up until the "31-40 years" experience level.
+
+However,after the "31-40 years" experience level, there is a slight decrease in the mean annual base salary. This could be due to factors such as retirement planning or reduced job responsibilities in later career stages.
+
+Overall the graph suggests that higher experience leads to higher salary. 
+
+
+
